@@ -167,7 +167,8 @@ class QASSMax(nn.Module):  # query-aware scalable softmax for better context len
 
 if __name__ == '__main__':  # check that forward pass works
     n_batch, n_train, n_test, n_cols = 2, 16, 8, 3
-    model = NanoTabICLv2(max_classes=10, out_dim=10)
-    x = torch.randn(n_batch, n_train + n_test, n_cols)
-    y = torch.randint(10, size=(n_batch, n_train))
+    device = "cuda"
+    model = NanoTabICLv2(max_classes=10, out_dim=10).to(device)
+    x = torch.randn(n_batch, n_train + n_test, n_cols).to(device)
+    y = torch.randint(10, size=(n_batch, n_train)).to(device)
     print(f'{model(x,y).shape=}')
