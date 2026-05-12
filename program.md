@@ -26,11 +26,11 @@ Each experiment runs on a single GPU. The training script runs for a **fixed tim
 - Modify `train.py` or `model.py` — these are the only file you edit. Everything is fair game: model architecture, optimizer, hyperparameters, training loop, batch size, model size, etc.
 
 **What you CANNOT do:**
-- Modify `prepare.py`. It is read-only. It contains the fixed evaluation, data loading, 
+- Modify `prepare.py`. It is read-only. It contains the fixed evaluation, data loading, and `TIME_BUDGET`. You MAY pass parameters of your choice to `evaluate_seul_mse` (e.g. `n_ctx`, `batch_size`) from `train.py`, but the function body itself is frozen.
 - Install new packages or add dependencies. You can only use what's already in `pyproject.toml`.
 - Modify the evaluation harness. The `evaluate_seul_mse` function in `prepare.py` is the ground truth metric.
 
-**The goal is simple: get the lowest MSE.** Since the time budget is fixed, you don't need to worry about training time — it's always 5 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size. The only constraint is that the code runs without crashing and finishes within the time budget. Note that during training the model does not see real evaluation data (it must only use generated data).
+**The goal is simple: get the lowest RMSE** (the value printed as `rmse:` by `train.py`, i.e. `sqrt(MSE)`). Since the time budget is fixed, you don't need to worry about training time — it's always 5 minutes. Everything is fair game: change the architecture, the optimizer, the hyperparameters, the batch size, the model size, the number of training steps (`n_steps`). The only constraint is that the code runs without crashing and finishes within the time budget. Note that during training the model does not see real evaluation data (it must only use generated data).
 
 **VRAM** is limited. If necessary you can spill some of the model to the RAM and train on CPU (or hybrid).
 
@@ -54,7 +54,7 @@ peak_vram_mb:     500.2
 Note that the script is configured to always stop after 5 minutes, so depending on the computing platform of this computer the numbers might look different. You can extract the key metric from the log file:
 
 ```
-grep "^val_bpb:" run.log
+grep "^rmse:" run.log
 ```
 
 ## Logging results

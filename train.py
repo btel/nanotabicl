@@ -1,5 +1,9 @@
 import time, torch, torch.nn.functional as F
 from model import NanoTabICLv2
+from prepare import TIME_BUDGET
+
+N_TRAIN = 128
+N_TEST = 32
 
 
 def generate_batch(n_batch: int, n_rows: int, n_cols: int, n_hidden: int = 32,
@@ -29,8 +33,8 @@ def train():
     torch.manual_seed(0)
 
     n_quantiles = 5
-    n_batch, n_train, n_test, n_cols = 8, 128, 32, 5
-    n_steps, log_every, lr = 1, 50, 1e-3
+    n_batch, n_train, n_test, n_cols = 8, N_TRAIN, N_TEST, 5
+    n_steps, log_every, lr = 100, 50, 1e-3
 
     # Smaller regression config from the README (out_dim = number of predicted quantiles).
     model = NanoTabICLv2(max_classes=0, out_dim=n_quantiles, embed_dim=96,
@@ -46,6 +50,7 @@ def train():
 
     model.train()
     running_loss, t0 = 0.0, time.time()
+    start_time = time.time()
     for step in range(1, n_steps + 1):
         x, y = generate_batch(n_batch, n_train + n_test, n_cols, device=device)
         # Regression mode requires the caller to standardize y based on the training portion.
@@ -70,45 +75,27 @@ def train():
                 mae = (median_pred - y[:, n_train:]).abs().mean().item()
             print(f"step {step:>5d}/{n_steps}  loss={avg:.4f}  median_MAE={mae:.4f}  ({steps_per_sec:.2f} it/s)")
             running_loss, t0 = 0.0, time.time()
+        if time.time() - start_time > TIME_BUDGET:
+            break
     return model, n_quantiles
 
 
-def evaluate(model: NanoTabICLv2, n_quantiles: int, batch_size: int = 64, n_ctx: int = 1024):
-    from prepare import make_dataloader
-    device = next(model.parameters()).device
-
-    X_train_ctx, y_train_ctx, test_loader = make_dataloader(batch_size)
-
-    # The trained model uses ~128 in-context rows, so subsample the training split to keep the
-    # in-context forward pass small enough to fit in memory.
-    n_ctx = min(n_ctx, len(X_train_ctx))
-    idx = torch.randperm(len(X_train_ctx), generator=torch.Generator().manual_seed(0))[:n_ctx]
-    X_train_ctx, y_train_ctx = X_train_ctx[idx].to(device), y_train_ctx[idx].to(device)
-
-    # Regression mode: caller standardizes y on the context and back-transforms predictions.
-    y_mean, y_std = y_train_ctx.mean(), y_train_ctx.std() + 1e-8
-    y_train_norm = (y_train_ctx - y_mean) / y_std
-
-    print(f"\nevaluating on Seoul bike test set ({len(test_loader.dataset)} rows, {n_ctx} context rows)")
-    model.eval()
-    abs_err_sum, sq_err_sum, n_seen = 0.0, 0.0, 0
-    with torch.no_grad():
-        for X_batch, y_batch in test_loader:
-            X_batch, y_batch = X_batch.to(device), y_batch.to(device)
-            X_in = torch.cat([X_train_ctx, X_batch], dim=0).unsqueeze(0)
-            y_in = y_train_norm.unsqueeze(0)
-            pred = model(X_in, y_in)  # (1, n_test_batch, n_quantiles)
-            median = pred[0, :, n_quantiles // 2] * y_std + y_mean
-            abs_err_sum += (median - y_batch).abs().sum().item()
-            sq_err_sum += ((median - y_batch) ** 2).sum().item()
-            n_seen += y_batch.numel()
-
-    mae, rmse = abs_err_sum / n_seen, (sq_err_sum / n_seen) ** 0.5
-    print(f"test MAE  = {mae:.3f}")
-    print(f"test RMSE = {rmse:.3f}")
-    return mae, rmse
-
 
 if __name__ == '__main__':
+    from prepare import evaluate_seul_mse
+    import time
+
+    start = time.time()
     model, n_quantiles = train()
-    evaluate(model, n_quantiles)
+    total_training_time = time.time() - start
+    start = time.time()
+    mae, mse =  evaluate_seul_mse(model, n_quantiles, n_ctx=N_TRAIN, batch_size=N_TEST)
+    eval_time = time.time() - start
+    peak_vram_mb = torch.cuda.max_memory_allocated() / 1024 / 1024
+    
+    print("---")
+    print(f"rmse:             {mse:.3f}")
+    print(f"training_seconds: {total_training_time:.1f}")
+    print(f"eval_seconds:     {eval_time:.1f}")
+    print(f"total_time:       {total_training_time + eval_time:.1f}")
+    print(f"peak_vram_mb:     {peak_vram_mb:.1f}")
