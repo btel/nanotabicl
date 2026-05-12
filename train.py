@@ -1,4 +1,4 @@
-import time, torch, torch.nn.functional as F
+import time, math, torch, torch.nn.functional as F
 from model import NanoTabICLv2
 from prepare import TIME_BUDGET
 
@@ -41,6 +41,15 @@ def train():
                         col_num_blocks=2, row_num_blocks=2, icl_num_blocks=4,
                         col_nhead=4, row_nhead=4, icl_nhead=4).to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr)
+    warmup_frac = 0.05  # fraction of TIME_BUDGET used for warmup
+    def set_lr(elapsed_frac):
+        if elapsed_frac < warmup_frac:
+            mul = elapsed_frac / warmup_frac
+        else:
+            progress = (elapsed_frac - warmup_frac) / max(1e-6, 1.0 - warmup_frac)
+            mul = 0.5 * (1.0 + math.cos(math.pi * min(progress, 1.0)))
+        for g in optimizer.param_groups:
+            g["lr"] = lr * mul
     levels = torch.linspace(1.0 / (n_quantiles + 1), 1.0 - 1.0 / (n_quantiles + 1), n_quantiles, device=device)
 
     n_params = sum(p.numel() for p in model.parameters())
@@ -52,6 +61,7 @@ def train():
     running_loss, t0 = 0.0, time.time()
     start_time = time.time()
     for step in range(1, n_steps + 1):
+        set_lr((time.time() - start_time) / TIME_BUDGET)
         x, y = generate_batch(n_batch, n_train + n_test, n_cols, device=device)
         # Regression mode requires the caller to standardize y based on the training portion.
         mu = y[:, :n_train].mean(dim=1, keepdim=True)
