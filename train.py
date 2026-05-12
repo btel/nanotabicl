@@ -34,7 +34,7 @@ def train():
 
     n_quantiles = 5
     n_batch, n_train, n_test, n_cols = 8, N_TRAIN, N_TEST, 5
-    n_steps, log_every, lr = 100, 50, 1e-3
+    n_steps, log_every, lr = 10000, 200, 1e-3
 
     # Smaller regression config from the README (out_dim = number of predicted quantiles).
     model = NanoTabICLv2(max_classes=0, out_dim=n_quantiles, embed_dim=96,
