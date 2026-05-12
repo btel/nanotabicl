@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+run.log
+results.tsv
+.python-version
+SeoulBikeData.csv
